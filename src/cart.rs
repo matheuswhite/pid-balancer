@@ -1,25 +1,17 @@
 #![allow(non_snake_case)]
 
+use crate::{camera::CameraDynamics, state::State};
+use macroquad::prelude::*;
 use std::f64::consts::PI;
 
-use macroquad::prelude::*;
-
-use crate::{camera::CameraDynamics, state::State};
 #[derive(PartialEq, Eq)]
 pub enum Integrator {
     Euler,
     RungeKutta4,
 }
 
-impl Default for Integrator {
-    fn default() -> Self {
-        Self::RungeKutta4
-    }
-}
-
 #[derive(PartialEq)]
 pub struct Cart {
-    pub F: f64,
     pub Fclamp: f64,
     pub Finp: f64,
     pub ui_scale: f32,
@@ -27,22 +19,28 @@ pub struct Cart {
     pub pid: (f64, f64, f64),
     pub error: f64,
     pub int: f64,
-    pub state: State,
     pub integrator: Integrator,
     pub steps: i32,
     pub m: f64,
     pub M: f64,
     pub mw: f64,
     pub ml: f64,
+    pub R: f64,
+    pub camera: CameraDynamics,
+    pub physics: CartPhysics,
+}
+
+#[derive(PartialEq)]
+pub struct CartPhysics {
+    pub F: f64,
+    pub m1: f64,
+    pub m2: f64,
+    pub m3: f64,
     pub l: f64,
     pub b1: f64,
     pub b2: f64,
-    pub R: f64,
-    pub camera: CameraDynamics,
-    g: f64,
-    m1: f64,
-    m2: f64,
-    m3: f64,
+    pub g: f64,
+    pub state: State,
 }
 
 impl Default for Cart {
@@ -55,34 +53,31 @@ impl Default for Cart {
         Cart {
             m,
             M,
-            l: 1.,
-            g: Self::GRAVITY,
-            F: 0.,
             Fclamp: Self::MAX_FORCE,
             Finp: 20.,
             int: 0.,
             error: 0.,
             R: 0.1,
-            state: State::default(),
-            b1: 0.01,
-            b2: 0.005,
             ui_scale: 0.3,
             mw,
             ml,
-            m1,
-            m2,
-            m3,
             pid: (Self::KP, Self::KI, Self::KD),
             steps: Self::STEP_SIZE,
             enable: true,
             integrator: Integrator::default(),
             camera: CameraDynamics::default(),
+            physics: CartPhysics::new(m1, m2, m3),
         }
     }
 }
 
+impl Default for Integrator {
+    fn default() -> Self {
+        Self::RungeKutta4
+    }
+}
+
 impl Cart {
-    const GRAVITY: f64 = 9.80665;
     const MAX_FORCE: f64 = 400.;
     const KP: f64 = 40.;
     const KI: f64 = 8.;
@@ -91,26 +86,56 @@ impl Cart {
 
     fn update_force(&mut self) {
         if self.enable {
-            self.F = (10.
-                * (self.error * self.pid.0 + self.int * self.pid.1 - self.state.w * self.pid.2))
+            self.physics.F = (10.
+                * (self.error * self.pid.0 + self.int * self.pid.1
+                    - self.physics.state.w * self.pid.2))
                 .clamp(-self.Fclamp, self.Fclamp);
         } else {
-            self.F = 0.;
+            self.physics.F = 0.;
         }
     }
 
     fn process_input(&mut self) {
         if is_key_down(KeyCode::Left) {
-            self.F = -self.Finp;
+            self.physics.F = -self.Finp;
             self.int = 0.
         } else if is_key_down(KeyCode::Right) {
-            self.F = self.Finp;
+            self.physics.F = self.Finp;
             self.int = 0.
         }
     }
 
+    fn integrate(&mut self, dt: f64) {
+        let k1 = self.physics.simulate(self.physics.state);
+        match self.integrator {
+            Integrator::Euler => {
+                self.physics.state = self.physics.state.next_state(k1, dt);
+            }
+            Integrator::RungeKutta4 => {
+                let k2 = self
+                    .physics
+                    .simulate(self.physics.state.next_state(k1, dt * 0.5));
+                let k3 = self
+                    .physics
+                    .simulate(self.physics.state.next_state(k2, dt * 0.5));
+                let k4 = self.physics.simulate(self.physics.state.next_state(k3, dt));
+
+                let k_avg = (
+                    (k1.x + 2.0 * k2.x + 2.0 * k3.x + k4.x) / 6.0,
+                    (k1.v + 2.0 * k2.v + 2.0 * k3.v + k4.v) / 6.0,
+                    (k1.th + 2.0 * k2.th + 2.0 * k3.th + k4.th) / 6.0,
+                    (k1.w + 2.0 * k2.w + 2.0 * k3.w + k4.w) / 6.0,
+                )
+                    .into();
+
+                self.physics.state = self.physics.state.next_state(k_avg, dt);
+            }
+        }
+    }
+
     pub fn update(&mut self, dt: f64) {
-        self.camera.update(self.state.x, self.state.v, dt);
+        self.camera
+            .update(self.physics.state.x, self.physics.state.v, dt);
 
         let steps = if dt > 0.02 {
             ((self.steps * 60) as f64 * dt) as i32
@@ -120,95 +145,15 @@ impl Cart {
 
         let dt = dt / steps as f64;
         for _ in 0..steps {
-            self.error = PI - self.state.th;
+            self.error = PI - self.physics.state.th;
             self.int += self.error * dt;
 
             self.update_force();
 
             self.process_input();
 
-            let k1 = self.process_state(self.state);
-            match self.integrator {
-                Integrator::Euler => {
-                    self.state = self.state.next_state(k1, dt);
-                }
-                Integrator::RungeKutta4 => {
-                    let k2 = self.process_state(self.state.next_state(k1, dt * 0.5));
-                    let k3 = self.process_state(self.state.next_state(k2, dt * 0.5));
-                    let k4 = self.process_state(self.state.next_state(k3, dt));
-
-                    let k_avg = (
-                        (k1.x + 2.0 * k2.x + 2.0 * k3.x + k4.x) / 6.0,
-                        (k1.v + 2.0 * k2.v + 2.0 * k3.v + k4.v) / 6.0,
-                        (k1.th + 2.0 * k2.th + 2.0 * k3.th + k4.th) / 6.0,
-                        (k1.w + 2.0 * k2.w + 2.0 * k3.w + k4.w) / 6.0,
-                    )
-                        .into();
-
-                    self.state = self.state.next_state(k_avg, dt);
-                }
-            }
+            self.integrate(dt);
         }
-    }
-
-    #[inline(always)]
-    fn compute_d(&self, th: f64) -> f64 {
-        let c = th.cos();
-
-        // d = (m2 * m1 * l^2) - (m3 * l * cos(th))^2;
-        self.m2 * self.l * self.l * self.m1 - self.m3 * self.m3 * self.l * self.l * c * c
-    }
-
-    #[inline(always)]
-    fn compute_f2(&self, th: f64, v: f64, w: f64) -> f64 {
-        let (s, c) = (th.sin(), th.cos());
-
-        // f2 = -(m3)^2 * l^2 * w^2 * sin(th) * cos(th)
-        //      + m3 * l * b1 * v * cos(th)
-        //      - m1 * (m3 * g * l * sin(th) + self.b2 * w);
-        -self.m3 * self.m3 * self.l * self.l * w * w * s * c + self.m3 * self.l * self.b1 * v * c
-            - self.m1 * (self.m3 * self.g * self.l * s + self.b2 * w)
-    }
-
-    #[inline(always)]
-    fn compute_f4(&self, th: f64, v: f64, w: f64) -> f64 {
-        let (s, c) = (th.sin(), th.cos());
-
-        // f4 = m2 * m3 * l^3 * w^2 * sin(th)
-        //      - m2 * l^2 * b1 * v
-        //      + m3^2 * l^2 * g * sin(th) * cos(th)
-        //      + m3 * l * b2 * w * cos(th);
-        self.m2 * self.m3 * self.l * self.l * self.l * w * w * s
-            - self.m2 * self.l * self.l * self.b1 * v
-            + self.m3 * self.m3 * self.l * self.l * self.g * s * c
-            + self.m3 * self.l * self.b2 * w * c
-    }
-
-    pub fn process_state(&self, State { v, w, th, .. }: State) -> State {
-        let d = self.compute_d(th);
-        let f2 = self.compute_f2(th, v, w);
-        let f4 = self.compute_f4(th, v, w);
-
-        let v_dot = (f4 + self.m2 * self.l * self.l * self.F) / d;
-        let w_dot = (f2 - self.m3 * self.l * th.cos() * self.F) / d;
-
-        (v_dot, v, w_dot, w).into()
-    }
-
-    pub fn get_potential_energy(&self) -> f64 {
-        // with respect to ground
-        -self.m3 * self.g * self.l * self.state.th.cos()
-    }
-
-    pub fn get_kinetic_energy(&self) -> f64 {
-        // (m1 * v^2) / 2 + (m2 * (w * l)^2) / 2 + m3 * v * w * l * cos(th)
-        0.5 * self.m1 * self.state.v * self.state.v
-            + 0.5 * self.m2 * self.state.w * self.state.w * self.l * self.l
-            + self.m3 * self.state.v * self.state.w * self.l * self.state.th.cos()
-    }
-
-    pub fn get_total_energy(&self) -> f64 {
-        self.get_potential_energy() + self.get_kinetic_energy()
     }
 
     pub fn display(
@@ -220,11 +165,11 @@ impl Cart {
         depth: f32,
     ) {
         draw_line(-length, -depth, length, -depth, thickness, color);
-        let x = (self.state.x - self.camera.y) as f32 * self.ui_scale;
+        let x = (self.physics.state.x - self.camera.y) as f32 * self.ui_scale;
         let R = self.R as f32 * self.ui_scale;
         let (c, s) = (
-            (self.state.x / self.R).cos() as f32,
-            (self.state.x / self.R).sin() as f32,
+            (self.physics.state.x / self.R).cos() as f32,
+            (self.physics.state.x / self.R).sin() as f32,
         );
 
         let ticks = (9. / self.ui_scale) as i32;
@@ -279,8 +224,11 @@ impl Cart {
             color,
         );
 
-        let (c, s) = ((self.state.th).cos() as f32, (self.state.th).sin() as f32);
-        let l = self.l as f32 * self.ui_scale;
+        let (c, s) = (
+            (self.physics.state.th).cos() as f32,
+            (self.physics.state.th).sin() as f32,
+        );
+        let l = self.physics.l as f32 * self.ui_scale;
         // pendulum
         draw_line(
             x,
@@ -292,5 +240,81 @@ impl Cart {
         );
         draw_circle_lines(x + l * s, -depth + h + 2. * R - l * c, R, thickness, color);
         draw_circle(x, -depth + 2. * R + h, 0.01, color);
+    }
+}
+
+impl CartPhysics {
+    pub fn new(m1: f64, m2: f64, m3: f64) -> Self {
+        Self {
+            F: 0.,
+            m1,
+            m2,
+            m3,
+            l: 1.,
+            b1: 0.01,
+            b2: 0.005,
+            g: 9.80665,
+            state: State::default(),
+        }
+    }
+
+    #[inline(always)]
+    fn compute_d(&self, th: f64) -> f64 {
+        let c = th.cos();
+
+        // d = (m2 * m1 * l^2) - (m3 * l * cos(th))^2;
+        self.m2 * self.l * self.l * self.m1 - self.m3 * self.m3 * self.l * self.l * c * c
+    }
+
+    #[inline(always)]
+    fn compute_f2(&self, th: f64, v: f64, w: f64) -> f64 {
+        let (s, c) = (th.sin(), th.cos());
+
+        // f2 = -(m3)^2 * l^2 * w^2 * sin(th) * cos(th)
+        //      + m3 * l * b1 * v * cos(th)
+        //      - m1 * (m3 * g * l * sin(th) + self.b2 * w);
+        -self.m3 * self.m3 * self.l * self.l * w * w * s * c + self.m3 * self.l * self.b1 * v * c
+            - self.m1 * (self.m3 * self.g * self.l * s + self.b2 * w)
+    }
+
+    #[inline(always)]
+    fn compute_f4(&self, th: f64, v: f64, w: f64) -> f64 {
+        let (s, c) = (th.sin(), th.cos());
+
+        // f4 = m2 * m3 * l^3 * w^2 * sin(th)
+        //      - m2 * l^2 * b1 * v
+        //      + m3^2 * l^2 * g * sin(th) * cos(th)
+        //      + m3 * l * b2 * w * cos(th);
+        self.m2 * self.m3 * self.l * self.l * self.l * w * w * s
+            - self.m2 * self.l * self.l * self.b1 * v
+            + self.m3 * self.m3 * self.l * self.l * self.g * s * c
+            + self.m3 * self.l * self.b2 * w * c
+    }
+
+    pub fn simulate(&self, State { v, w, th, .. }: State) -> State {
+        let d = self.compute_d(th);
+        let f2 = self.compute_f2(th, v, w);
+        let f4 = self.compute_f4(th, v, w);
+
+        let v_dot = (f4 + self.m2 * self.l * self.l * self.F) / d;
+        let w_dot = (f2 - self.m3 * self.l * th.cos() * self.F) / d;
+
+        (v_dot, v, w_dot, w).into()
+    }
+
+    pub fn get_potential_energy(&self) -> f64 {
+        // with respect to ground
+        -self.m3 * self.g * self.l * self.state.th.cos()
+    }
+
+    pub fn get_kinetic_energy(&self) -> f64 {
+        // (m1 * v^2) / 2 + (m2 * (w * l)^2) / 2 + m3 * v * w * l * cos(th)
+        0.5 * self.m1 * self.state.v * self.state.v
+            + 0.5 * self.m2 * self.state.w * self.state.w * self.l * self.l
+            + self.m3 * self.state.v * self.state.w * self.l * self.state.th.cos()
+    }
+
+    pub fn get_total_energy(&self) -> f64 {
+        self.get_potential_energy() + self.get_kinetic_energy()
     }
 }

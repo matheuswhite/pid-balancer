@@ -247,7 +247,7 @@ pub fn draw_ui(w: f32, grid: f32, cart: &mut Cart, forceplt: &mut Graph, forcepl
                         });
                         ui.horizontal(|ui| {
                             ui.add(
-                                DragValue::new(&mut cart.b1)
+                                DragValue::new(&mut cart.physics.b1)
                                     .clamp_range(0.0..=0.5)
                                     .speed(0.0002)
                                     .custom_formatter(|x, _| format!("{:.3}", x)),
@@ -256,7 +256,7 @@ pub fn draw_ui(w: f32, grid: f32, cart: &mut Cart, forceplt: &mut Graph, forcepl
                         });
                         ui.horizontal(|ui| {
                             ui.add(
-                                DragValue::new(&mut cart.l)
+                                DragValue::new(&mut cart.physics.l)
                                     .clamp_range(0.1..=10.)
                                     .speed(0.05),
                             );
@@ -290,7 +290,7 @@ pub fn draw_ui(w: f32, grid: f32, cart: &mut Cart, forceplt: &mut Graph, forcepl
                         });
                         ui.horizontal(|ui| {
                             ui.add(
-                                DragValue::new(&mut cart.b2)
+                                DragValue::new(&mut cart.physics.b2)
                                     .clamp_range(0.0..=0.5)
                                     .speed(0.0002)
                                     .custom_formatter(|x, _| format!("{:.3}", x)),
@@ -326,11 +326,17 @@ pub fn draw_ui(w: f32, grid: f32, cart: &mut Cart, forceplt: &mut Graph, forcepl
             // .title_bar(false)
             .show(ctx, |ui| {
                 ui.with_layout(Layout::top_down(Align::Center), |ui| {
-                    ui.label(format!("System Energy: {:.2}", cart.get_total_energy()));
-                    ui.label(format!("Kinetic Energy: {:.2}", cart.get_kinetic_energy()));
+                    ui.label(format!(
+                        "System Energy: {:.2}",
+                        cart.physics.get_total_energy()
+                    ));
+                    ui.label(format!(
+                        "Kinetic Energy: {:.2}",
+                        cart.physics.get_kinetic_energy()
+                    ));
                     ui.label(format!(
                         "Potential Energy: {:.2}",
-                        cart.get_potential_energy()
+                        cart.physics.get_potential_energy()
                     ));
                     ui.separator();
                     ui.horizontal(|ui| {
@@ -367,7 +373,7 @@ pub fn draw_ui(w: f32, grid: f32, cart: &mut Cart, forceplt: &mut Graph, forcepl
                             },
                         );
                         if ui.button("Reset").clicked() {
-                            cart.state = State::default();
+                            cart.physics.state = State::default();
                             cart.int = 0.;
                             cart.camera = CameraDynamics::default();
                         };
