@@ -55,7 +55,14 @@ async fn main() {
             cart.update(get_frame_time() as f64);
         }
         forceplt.update([cart.physics.F].to_vec());
-        forceplt1.update([cart.int, -cart.physics.state.w, cart.error].to_vec());
+        forceplt1.update(
+            [
+                cart.pid.integral() as f64,
+                -cart.physics.state.w,
+                cart.pid.error() as f64,
+            ]
+            .to_vec(),
+        );
 
         clear_background(back_color);
         draw_blue_grid(grid, SKYBLUE, 0.001, 3, 0.003);

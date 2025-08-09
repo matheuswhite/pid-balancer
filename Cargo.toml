@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 egui-macroquad = "0.15.0"
 macroquad = "0.3.25"
+aule = { git = "https://github.com/matheuswhite/aule-rs" }
+ndarray = "0.16.1"
 
 [profile.release]
 opt-level = 'z'   # Optimize for size

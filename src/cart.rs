@@ -1,8 +1,9 @@
 #![allow(non_snake_case)]
 
 use crate::{camera::CameraDynamics, state::State};
+use aule::prelude::*;
 use macroquad::prelude::*;
-use std::f64::consts::PI;
+use std::{f64::consts::PI, time::Duration};
 
 #[derive(PartialEq, Eq)]
 pub enum Integrator {
@@ -15,9 +16,7 @@ pub struct Cart {
     pub Fclamp: f64,
     pub Finp: f64,
     pub enable: bool,
-    pub pid: (f64, f64, f64),
-    pub error: f64,
-    pub int: f64,
+    pub pid: PID,
     pub integrator: Integrator,
     pub steps: i32,
     pub physics: CartPhysics,
@@ -58,9 +57,7 @@ impl Default for Cart {
         Cart {
             Fclamp: Self::MAX_FORCE,
             Finp: 20.,
-            int: 0.,
-            error: 0.,
-            pid: (Self::KP, Self::KI, Self::KD),
+            pid: PID::new(Self::KP, Self::KI, Self::KD),
             steps: Self::STEP_SIZE,
             enable: true,
             integrator: Integrator::default(),
@@ -78,17 +75,15 @@ impl Default for Integrator {
 
 impl Cart {
     const MAX_FORCE: f64 = 400.;
-    const KP: f64 = 40.;
-    const KI: f64 = 8.;
-    const KD: f64 = 2.5;
+    const KP: f32 = 40.;
+    const KI: f32 = 8.;
+    const KD: f32 = 2.5;
     const STEP_SIZE: i32 = 5;
 
-    fn update_force(&mut self) {
+    fn update_force(&mut self, error: Signal) {
         if self.enable {
-            self.physics.F = (10.
-                * (self.error * self.pid.0 + self.int * self.pid.1
-                    - self.physics.state.w * self.pid.2))
-                .clamp(-self.Fclamp, self.Fclamp);
+            let pid_output = self.pid.output(error).value as f64;
+            self.physics.F = (10. * pid_output).clamp(-self.Fclamp, self.Fclamp);
         } else {
             self.physics.F = 0.;
         }
@@ -97,10 +92,10 @@ impl Cart {
     fn process_input(&mut self) {
         if is_key_down(KeyCode::Left) {
             self.physics.F = -self.Finp;
-            self.int = 0.
+            self.pid.clear_integral();
         } else if is_key_down(KeyCode::Right) {
             self.physics.F = self.Finp;
-            self.int = 0.
+            self.pid.clear_integral();
         }
     }
 
@@ -145,10 +140,10 @@ impl Cart {
 
         let dt = dt / steps as f64;
         for _ in 0..steps {
-            self.error = PI - self.physics.state.th;
-            self.int += self.error * dt;
+            let error = PI - self.physics.state.th;
+            let error = (error as f32, Duration::from_secs_f64(dt)).into();
 
-            self.update_force();
+            self.update_force(error);
 
             self.process_input();
 

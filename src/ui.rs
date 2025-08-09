@@ -210,17 +210,17 @@ pub fn draw_ui(w: f32, grid: f32, cart: &mut Cart, forceplt: &mut Graph, forcepl
             .show(ctx, |ui| {
                 ui.with_layout(Layout::top_down(Align::RIGHT), |ui| {
                     ui.add(
-                        Slider::new(&mut cart.pid.0, 0.0..=150.0)
+                        Slider::new(cart.pid.kp_mut(), 0.0..=150.0)
                             .drag_value_speed(0.2)
                             .text("P"),
                     );
                     ui.add(
-                        Slider::new(&mut cart.pid.1, 0.0..=100.0)
+                        Slider::new(cart.pid.ki_mut(), 0.0..=100.0)
                             .drag_value_speed(0.1)
                             .text("I"),
                     );
                     ui.add(
-                        Slider::new(&mut cart.pid.2, 0.0..=40.)
+                        Slider::new(cart.pid.kd_mut(), 0.0..=40.)
                             .drag_value_speed(0.04)
                             .text("D"),
                     );
@@ -374,7 +374,7 @@ pub fn draw_ui(w: f32, grid: f32, cart: &mut Cart, forceplt: &mut Graph, forcepl
                         );
                         if ui.button("Reset").clicked() {
                             cart.physics.state = State::default();
-                            cart.int = 0.;
+                            cart.pid.clear_integral();
                             cart.ui.camera = CameraDynamics::default();
                         };
                     })
