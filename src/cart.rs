@@ -14,20 +14,14 @@ pub enum Integrator {
 pub struct Cart {
     pub Fclamp: f64,
     pub Finp: f64,
-    pub ui_scale: f32,
     pub enable: bool,
     pub pid: (f64, f64, f64),
     pub error: f64,
     pub int: f64,
     pub integrator: Integrator,
     pub steps: i32,
-    pub m: f64,
-    pub M: f64,
-    pub mw: f64,
-    pub ml: f64,
-    pub R: f64,
-    pub camera: CameraDynamics,
     pub physics: CartPhysics,
+    pub ui: CartUI,
 }
 
 #[derive(PartialEq)]
@@ -43,6 +37,17 @@ pub struct CartPhysics {
     pub state: State,
 }
 
+#[derive(PartialEq)]
+pub struct CartUI {
+    pub ui_scale: f32,
+    pub m: f64,
+    pub M: f64,
+    pub mw: f64,
+    pub ml: f64,
+    pub R: f64,
+    pub camera: CameraDynamics,
+}
+
 impl Default for Cart {
     fn default() -> Self {
         let (M, m, ml, mw) = (5., 0.5, 1., 1.);
@@ -51,22 +56,16 @@ impl Default for Cart {
         let m3 = m + ml / 2.;
 
         Cart {
-            m,
-            M,
             Fclamp: Self::MAX_FORCE,
             Finp: 20.,
             int: 0.,
             error: 0.,
-            R: 0.1,
-            ui_scale: 0.3,
-            mw,
-            ml,
             pid: (Self::KP, Self::KI, Self::KD),
             steps: Self::STEP_SIZE,
             enable: true,
             integrator: Integrator::default(),
-            camera: CameraDynamics::default(),
             physics: CartPhysics::new(m1, m2, m3),
+            ui: CartUI::new(m, M, mw, ml),
         }
     }
 }
@@ -134,7 +133,8 @@ impl Cart {
     }
 
     pub fn update(&mut self, dt: f64) {
-        self.camera
+        self.ui
+            .camera
             .update(self.physics.state.x, self.physics.state.v, dt);
 
         let steps = if dt > 0.02 {
@@ -154,92 +154,6 @@ impl Cart {
 
             self.integrate(dt);
         }
-    }
-
-    pub fn display(
-        &self,
-        back_color: Color,
-        color: Color,
-        thickness: f32,
-        length: f32,
-        depth: f32,
-    ) {
-        draw_line(-length, -depth, length, -depth, thickness, color);
-        let x = (self.physics.state.x - self.camera.y) as f32 * self.ui_scale;
-        let R = self.R as f32 * self.ui_scale;
-        let (c, s) = (
-            (self.physics.state.x / self.R).cos() as f32,
-            (self.physics.state.x / self.R).sin() as f32,
-        );
-
-        let ticks = (9. / self.ui_scale) as i32;
-        let gap = 2. / ticks as f32;
-        let offset = (self.camera.y as f32 * self.ui_scale) % gap;
-        for i in 0..ticks + 2 {
-            draw_line(
-                (-offset + gap * i as f32 - 1.) * length,
-                -depth - 0.002,
-                (-offset + gap * i as f32 - 1.) * length - 0.1 * self.ui_scale,
-                -depth - 0.1 * self.ui_scale,
-                thickness,
-                color,
-            );
-        }
-        draw_rectangle(
-            -1.,
-            -depth - 0.001,
-            1. - length - 0.003,
-            -0.11 * self.ui_scale,
-            back_color,
-        );
-        draw_rectangle(
-            length + 0.003,
-            -depth - 0.001,
-            1. - length - 0.003,
-            -0.11 * self.ui_scale,
-            back_color,
-        );
-
-        let (w, h) = (R * 10., R * 3.5);
-        // cart
-        draw_rectangle_lines(x - 0.5 * w, -depth + 2. * R, w, h, thickness * 2., color);
-
-        // wheels
-        draw_circle_lines(x - 0.30 * w, -depth + R, R, thickness, color);
-        draw_circle_lines(x + 0.30 * w, -depth + R, R, thickness, color);
-        draw_line(
-            x - 0.30 * w,
-            -depth + R,
-            x - 0.30 * w - R * c,
-            -depth + R + R * s,
-            thickness,
-            color,
-        );
-        draw_line(
-            x + 0.30 * w,
-            -depth + R,
-            x + 0.30 * w - R * c,
-            -depth + R + R * s,
-            thickness,
-            color,
-        );
-
-        let (c, s) = (
-            (self.physics.state.th).cos() as f32,
-            (self.physics.state.th).sin() as f32,
-        );
-        let l = self.physics.l as f32 * self.ui_scale;
-        // pendulum
-        draw_line(
-            x,
-            -depth + h + 2. * R,
-            x + (l - R) * s,
-            -depth + h + 2. * R - (l - R) * c,
-            thickness,
-            color,
-        );
-        draw_circle_lines(x + l * s, -depth + h + 2. * R - l * c, R, thickness, color);
-        draw_circle(x, -depth + 2. * R + h, 0.01, color);
     }
 }
 
@@ -316,5 +230,106 @@ impl CartPhysics {
 
     pub fn get_total_energy(&self) -> f64 {
         self.get_potential_energy() + self.get_kinetic_energy()
+    }
+}
+
+impl CartUI {
+    pub fn new(m: f64, M: f64, mw: f64, ml: f64) -> Self {
+        Self {
+            ui_scale: 0.3,
+            m,
+            M,
+            mw,
+            ml,
+            R: 0.1,
+            camera: CameraDynamics::default(),
+        }
+    }
+
+    pub fn display(
+        &self,
+        back_color: Color,
+        color: Color,
+        thickness: f32,
+        length: f32,
+        depth: f32,
+        physics: &CartPhysics,
+    ) {
+        draw_line(-length, -depth, length, -depth, thickness, color);
+        let x = (physics.state.x - self.camera.y) as f32 * self.ui_scale;
+        let R = self.R as f32 * self.ui_scale;
+        let (c, s) = (
+            (physics.state.x / self.R).cos() as f32,
+            (physics.state.x / self.R).sin() as f32,
+        );
+
+        let ticks = (9. / self.ui_scale) as i32;
+        let gap = 2. / ticks as f32;
+        let offset = (self.camera.y as f32 * self.ui_scale) % gap;
+        for i in 0..ticks + 2 {
+            draw_line(
+                (-offset + gap * i as f32 - 1.) * length,
+                -depth - 0.002,
+                (-offset + gap * i as f32 - 1.) * length - 0.1 * self.ui_scale,
+                -depth - 0.1 * self.ui_scale,
+                thickness,
+                color,
+            );
+        }
+        draw_rectangle(
+            -1.,
+            -depth - 0.001,
+            1. - length - 0.003,
+            -0.11 * self.ui_scale,
+            back_color,
+        );
+        draw_rectangle(
+            length + 0.003,
+            -depth - 0.001,
+            1. - length - 0.003,
+            -0.11 * self.ui_scale,
+            back_color,
+        );
+
+        let (w, h) = (R * 10., R * 3.5);
+        // cart
+        draw_rectangle_lines(x - 0.5 * w, -depth + 2. * R, w, h, thickness * 2., color);
+
+        // wheels
+        draw_circle_lines(x - 0.30 * w, -depth + R, R, thickness, color);
+        draw_circle_lines(x + 0.30 * w, -depth + R, R, thickness, color);
+        draw_line(
+            x - 0.30 * w,
+            -depth + R,
+            x - 0.30 * w - R * c,
+            -depth + R + R * s,
+            thickness,
+            color,
+        );
+        draw_line(
+            x + 0.30 * w,
+            -depth + R,
+            x + 0.30 * w - R * c,
+            -depth + R + R * s,
+            thickness,
+            color,
+        );
+
+        let (c, s) = (
+            (physics.state.th).cos() as f32,
+            (physics.state.th).sin() as f32,
+        );
+        let l = physics.l as f32 * self.ui_scale;
+        // pendulum
+        draw_line(
+            x,
+            -depth + h + 2. * R,
+            x + (l - R) * s,
+            -depth + h + 2. * R - (l - R) * c,
+            thickness,
+            color,
+        );
+        draw_circle_lines(x + l * s, -depth + h + 2. * R - l * c, R, thickness, color);
+        draw_circle(x, -depth + 2. * R + h, 0.01, color);
     }
 }

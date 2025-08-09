@@ -231,7 +231,7 @@ pub fn draw_ui(w: f32, grid: f32, cart: &mut Cart, forceplt: &mut Graph, forcepl
                     cols[0].with_layout(Layout::top_down(Align::Max), |ui| {
                         ui.horizontal(|ui| {
                             ui.add(
-                                DragValue::new(&mut cart.M)
+                                DragValue::new(&mut cart.ui.M)
                                     .clamp_range(0.0..=100.)
                                     .speed(0.05),
                             );
@@ -239,7 +239,7 @@ pub fn draw_ui(w: f32, grid: f32, cart: &mut Cart, forceplt: &mut Graph, forcepl
                         });
                         ui.horizontal(|ui| {
                             ui.add(
-                                DragValue::new(&mut cart.ml)
+                                DragValue::new(&mut cart.ui.ml)
                                     .clamp_range(0.0..=100.)
                                     .speed(0.05),
                             );
@@ -274,7 +274,7 @@ pub fn draw_ui(w: f32, grid: f32, cart: &mut Cart, forceplt: &mut Graph, forcepl
                     cols[1].with_layout(Layout::top_down(Align::Max), |ui| {
                         ui.horizontal(|ui| {
                             ui.add(
-                                DragValue::new(&mut cart.m)
+                                DragValue::new(&mut cart.ui.m)
                                     .clamp_range(0.0..=100.)
                                     .speed(0.05),
                             );
@@ -282,7 +282,7 @@ pub fn draw_ui(w: f32, grid: f32, cart: &mut Cart, forceplt: &mut Graph, forcepl
                         });
                         ui.horizontal(|ui| {
                             ui.add(
-                                DragValue::new(&mut cart.mw)
+                                DragValue::new(&mut cart.ui.mw)
                                     .clamp_range(0.0..=100.)
                                     .speed(0.05),
                             );
@@ -299,7 +299,7 @@ pub fn draw_ui(w: f32, grid: f32, cart: &mut Cart, forceplt: &mut Graph, forcepl
                         });
                         ui.horizontal(|ui| {
                             ui.add(
-                                DragValue::new(&mut cart.R)
+                                DragValue::new(&mut cart.ui.R)
                                     .clamp_range(0.0..=1.)
                                     .speed(0.005),
                             );
@@ -355,7 +355,7 @@ pub fn draw_ui(w: f32, grid: f32, cart: &mut Cart, forceplt: &mut Graph, forcepl
                             .text("Steps / Frame"),
                     );
                     ui.add(
-                        Slider::new(&mut cart.ui_scale, 0.03..=0.6)
+                        Slider::new(&mut cart.ui.ui_scale, 0.03..=0.6)
                             .custom_formatter(|n, _| format!("{:.2}", n / 0.3))
                             .custom_parser(|s| s.parse::<f64>().map(|v| v * 0.3).ok())
                             .text("Draw Scale"),
@@ -375,7 +375,7 @@ pub fn draw_ui(w: f32, grid: f32, cart: &mut Cart, forceplt: &mut Graph, forcepl
                         if ui.button("Reset").clicked() {
                             cart.physics.state = State::default();
                             cart.int = 0.;
-                            cart.camera = CameraDynamics::default();
+                            cart.ui.camera = CameraDynamics::default();
                         };
                     })
                 });

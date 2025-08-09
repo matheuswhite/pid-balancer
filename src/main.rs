@@ -60,7 +60,14 @@ async fn main() {
         clear_background(back_color);
         draw_blue_grid(grid, SKYBLUE, 0.001, 3, 0.003);
 
-        cart.display(back_color, WHITE, 0.006, 6. * grid, 3. * grid);
+        cart.ui.display(
+            back_color,
+            WHITE,
+            0.006,
+            6. * grid,
+            3. * grid,
+            &cart.physics,
+        );
         draw_speedometer(
             &format!(
                 "Angular Velocity ({}) {:.2}",
