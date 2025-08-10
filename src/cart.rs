@@ -3,10 +3,11 @@
 use crate::{camera::CameraDynamics, state::State};
 use aule::prelude::*;
 use macroquad::prelude::*;
-use std::{f64::consts::PI, time::Duration};
+use ndarray::Array2;
+use std::{f64::consts::PI, mem::swap, time::Duration};
 
 #[derive(PartialEq, Eq)]
-pub enum Integrator {
+pub enum IntegratorKind {
     Euler,
     RungeKutta4,
 }
@@ -17,7 +18,7 @@ pub struct Cart {
     pub Finp: f64,
     pub enable: bool,
     pub pid: PID,
-    pub integrator: Integrator,
+    pub integrator: IntegratorKind,
     pub steps: i32,
     pub physics: CartPhysics,
     pub ui: CartUI,
@@ -60,16 +61,16 @@ impl Default for Cart {
             pid: PID::new(Self::KP, Self::KI, Self::KD),
             steps: Self::STEP_SIZE,
             enable: true,
-            integrator: Integrator::default(),
+            integrator: IntegratorKind::default(),
             physics: CartPhysics::new(m1, m2, m3),
             ui: CartUI::new(m, M, mw, ml),
         }
     }
 }
 
-impl Default for Integrator {
+impl Default for IntegratorKind {
     fn default() -> Self {
-        Self::RungeKutta4
+        Self::Euler
     }
 }
 
@@ -100,31 +101,15 @@ impl Cart {
     }
 
     fn integrate(&mut self, dt: f64) {
-        let k1 = self.physics.simulate(self.physics.state);
-        match self.integrator {
-            Integrator::Euler => {
-                self.physics.state = self.physics.state.next_state(k1, dt);
-            }
-            Integrator::RungeKutta4 => {
-                let k2 = self
-                    .physics
-                    .simulate(self.physics.state.next_state(k1, dt * 0.5));
-                let k3 = self
-                    .physics
-                    .simulate(self.physics.state.next_state(k2, dt * 0.5));
-                let k4 = self.physics.simulate(self.physics.state.next_state(k3, dt));
+        let old_state: Array2<f32> = self.physics.state.into();
+        let dt = Duration::from_secs_f64(dt);
 
-                let k_avg = (
-                    (k1.x + 2.0 * k2.x + 2.0 * k3.x + k4.x) / 6.0,
-                    (k1.v + 2.0 * k2.v + 2.0 * k3.v + k4.v) / 6.0,
-                    (k1.th + 2.0 * k2.th + 2.0 * k3.th + k4.th) / 6.0,
-                    (k1.w + 2.0 * k2.w + 2.0 * k3.w + k4.w) / 6.0,
-                )
-                    .into();
-
-                self.physics.state = self.physics.state.next_state(k_avg, dt);
-            }
+        self.physics.state = match self.integrator {
+            IntegratorKind::Euler => Euler::integrate(old_state, dt, &self.physics),
+            IntegratorKind::RungeKutta4 => RK4::integrate(old_state, dt, &self.physics),
         }
+        .into();
+        self.physics.state.th = (self.physics.state.th % (2. * PI) + 2. * PI) % (2. * PI);
     }
 
     pub fn update(&mut self, dt: f64) {
@@ -225,6 +210,18 @@ impl CartPhysics {
 
     pub fn get_total_energy(&self) -> f64 {
         self.get_potential_energy() + self.get_kinetic_energy()
+    }
+}
+
+impl StateEstimation for CartPhysics {
+    fn estimate(&self, state: Array2<f32>) -> Array2<f32> {
+        let state: State = state.into();
+
+        let mut next_state = self.simulate(state);
+        swap(&mut next_state.x, &mut next_state.v);
+        swap(&mut next_state.th, &mut next_state.w);
+
+        Array2::from(next_state)
     }
 }
 

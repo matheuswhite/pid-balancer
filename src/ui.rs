@@ -340,11 +340,15 @@ pub fn draw_ui(w: f32, grid: f32, cart: &mut Cart, forceplt: &mut Graph, forcepl
                     ));
                     ui.separator();
                     ui.horizontal(|ui| {
-                        ui.label("Integrator: ");
-                        ui.selectable_value(&mut cart.integrator, cart::Integrator::Euler, "Euler");
+                        ui.label("IntegratorKind: ");
                         ui.selectable_value(
                             &mut cart.integrator,
-                            cart::Integrator::RungeKutta4,
+                            cart::IntegratorKind::Euler,
+                            "Euler",
+                        );
+                        ui.selectable_value(
+                            &mut cart.integrator,
+                            cart::IntegratorKind::RungeKutta4,
                             "Runge-Kutta⁴",
                         );
                     });
